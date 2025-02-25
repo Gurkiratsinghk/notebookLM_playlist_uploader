@@ -1,95 +1,127 @@
+import os
+import csv
+import logging
+import time
 from playwright.sync_api import sync_playwright
+from notebook_cv import notebook_cv
 
-def add_youtube_source(page, url):
-    # Wait for and click the '+ Add Source' button
-    page.wait_for_selector("text='+ Add Source'", timeout=20000)
-    page.click("text='+ Add Source'")
-    
-    # Wait for the pop-up that contains the 'Youtube' button and click it
-    page.wait_for_selector("text='Youtube'", timeout=5000)
-    page.click("text='Youtube'")
-    
-    # Wait for the next pop-up with the URL input field.
-    # Adjust the selector if the input has a unique attribute or placeholder.
-    page.wait_for_selector("input[type='text']", timeout=5000)
-    
-    # Fill in the URL into the text field
-    page.fill("input[type='text']", url)
-    
-    # Wait for and click the 'Insert' button
-    page.wait_for_selector("text='Insert'", timeout=10000)
-    page.click("text='Insert'")
-    
-    # Optionally, wait for the pop-up to close or for the action to complete
-    page.wait_for_timeout(1000)  # Wait 1 second
+# Set up logging so that each processed URL is logged (one per line)
+LOG_FILE = "processed_links.log"
+logging.basicConfig(
+    filename=LOG_FILE,
+    level=logging.INFO,
+    format='%(asctime)s - %(message)s',
+)
 
-def run(playwright):
-    user_data_dir = "./my_profile"
-    # Custom arguments and user agent to reduce automation signals.
-    args = [
-        "--disable-blink-features=AutomationControlled",
-        "--disable-infobars",
-        # Set a common user agent string to mimic a real browser.
-        "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/90.0.4430.93 Safari/537.36"
-    ]
-    
-    # Launch a persistent context so you only sign in once.
-    context = playwright.chromium.launch_persistent_context(
-        user_data_dir,
-        headless=False,
-        args=args
-    )
-    page = context.new_page()
-    
-    # Directly navigate to Google's sign-in page
-    page.goto("https://accounts.google.com/signin")
-    
-    # Allow time for you to sign in manually (if needed).
-    # After a successful sign-in, the session data will be saved.
-    page.wait_for_timeout(30000)  # Wait 30 seconds or adjust as needed.
-    
-    # After signing in manually, navigate to your target NotebookLM page.
-    page.goto("https://notebooklm.google.com/notebook/c1a09f50-862c-4207-9dcd-7e2eba435fe8")
-    page.wait_for_load_state("networkidle")
-    
-    # Array of YouTube URLs to add
-    youtube_urls = [
-        'https://www.youtube.com/watch?v=K5tUbZzcOEc',
-        'https://www.youtube.com/watch?v=nG47fQ-aiHw',
-        'https://www.youtube.com/watch?v=w6R6V1Mpz7s',
-        'https://www.youtube.com/watch?v=So_UGo4dSJs',
-        'https://www.youtube.com/watch?v=H8U0a9bwxqc',
-        'https://www.youtube.com/watch?v=uL8C9wQrk3g',
-        'https://www.youtube.com/watch?v=EFONLmsmVFw',
-        'https://www.youtube.com/watch?v=Ih92AK1D-2M',
-        'https://www.youtube.com/watch?v=AGj73UQN-K0',
-        'https://www.youtube.com/watch?v=nTq-OKy5kHs',
-        'https://www.youtube.com/watch?v=ikaTTZEY5VE',
-        'https://www.youtube.com/watch?v=lRtTS1PNFik',
-        'https://www.youtube.com/watch?v=V-mbUZhovOo',
-        'https://www.youtube.com/watch?v=WJNPGXivqew',
-        'https://www.youtube.com/watch?v=HWnEifmgAdU',
-        'https://www.youtube.com/watch?v=OVZPEUzXbqM',
-        'https://www.youtube.com/watch?v=Zh4eqhcZjcg',
-        'https://www.youtube.com/watch?v=CKncVaiv_08',
-        'https://www.youtube.com/watch?v=jcE-Ue83P7U',
-        'https://www.youtube.com/watch?v=4VztgBcVH5Q',
-        'https://www.youtube.com/watch?v=7FhXh4yXUao',
-        'https://www.youtube.com/watch?v=BryipFEiIiE',
-        'https://www.youtube.com/watch?v=teW8gmpKQcI',
-        'https://www.youtube.com/watch?v=TDZVCli3bEs',
-        'https://www.youtube.com/watch?v=TtItFQTNMA4'
-    ]
-    
-    # Loop through each URL and add it as a source
-    for url in youtube_urls:
-        add_youtube_source(page, url)
-    
-    # Wait to observe the results before closing
-    page.wait_for_timeout(5000)
-    context.close()
+def load_processed_links():
+    """Load already-processed links from the log file into a set."""
+    processed = set()
+    if os.path.exists(LOG_FILE):
+        with open(LOG_FILE, "r", encoding="utf-8") as f:
+            for line in f:
+                processed.add(line.strip())
+    return processed
 
-with sync_playwright() as playwright:
-    run(playwright)
+def run_js_to_download_csv(page):
+    """
+    Inject your JavaScript code into the page.
+    This code scrolls, gathers video data, creates a CSV blob, and clicks to download it.
+    """
+    js_code = r'''
+    // Scroll down for 5 seconds to load more videos.
+    let goToBottom = setInterval(() => window.scrollBy(0, 400), 1000);
+    setTimeout(() => {
+        clearInterval(goToBottom);
+        let arrayVideos = [];
+        console.log('\n'.repeat(50));
+        const links = document.querySelectorAll('a');
+        for (const link of links) {
+            if (link.id === "video-title") {
+                link.href = link.href.split('&list=')[0];
+                arrayVideos.push(link.title + ';' + link.href);
+                console.log(link.title + '\t' + link.href);
+            }
+        }
+        let data = arrayVideos.join('\n');
+        let blob = new Blob([data], {type: 'text/csv'});
+        let elem = window.document.createElement('a');
+        elem.href = window.URL.createObjectURL(blob);
+        elem.download = 'my_data.csv';
+        document.body.appendChild(elem);
+        elem.click();
+        document.body.removeChild(elem);
+    }, 5000);
+    '''
+    page.evaluate(js_code)
+
+def main():
+    # Load already processed URLs from the log
+    processed_links = load_processed_links()
+    youtube_urls = []
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=False)
+        # Enable downloads by setting accept_downloads=True in context options.
+        context = browser.new_context(accept_downloads=True)
+        page = context.new_page()
+
+        ytPlaylist = "https://www.youtube.com/playlist?list=PL9B24A6A9D5754E70"
+
+        # Navigate to your target YouTube page or playlist.
+        # Replace with the actual URL you want to scrape.
+        page.goto(ytPlaylist)
+        page.wait_for_load_state("networkidle")
+        time.sleep(2)  # Ensure the page is fully ready
+
+        # Run the JavaScript to scroll & scrape videos.
+        run_js_to_download_csv(page)
+
+        # Wait for the CSV download to start.
+        try:
+            download = page.wait_for_event("download", timeout=30000)  # wait up to 30 sec
+        except Exception as e:
+            print("Download did not start:", e)
+            context.close()
+            browser.close()
+            return
+
+        # Save the downloaded CSV to a known file name.
+        csv_path = os.path.join(os.getcwd(), "my_data.csv")
+        download.save_as(csv_path)
+        print("CSV downloaded and saved to:", csv_path)
+
+        # Wait a bit to ensure the file is fully written.
+        time.sleep(2)
+
+        # Read the CSV file and build your array of YouTube URLs,
+        # skipping any URL that has already been processed.
+        with open(csv_path, "r", encoding="utf-8") as csvfile:
+            reader = csv.reader(csvfile, delimiter=';')
+            for row in reader:
+                if len(row) >= 2:
+                    title, url = row[0].strip(), row[1].strip()
+                    if url and url not in processed_links:
+                        youtube_urls.append(url)
+                        # Log the new URL so that we don't process it next time.
+                        logging.info(url)
+                    else:
+                        print("Skipping already processed URL:", url)
+        print("New YouTube URLs found:", youtube_urls)
+
+        # At this point, you can call your automation (e.g., with OpenCV/pyautogui)
+        # to process each new URL. For demonstration, we just print them.
+        #
+        # Example:
+        # for url in youtube_urls:
+        #     add_youtube_source(url)
+        #
+        # (Assuming add_youtube_source() is your automation function.)
+
+        notebook_cv(youtube_urls)
+
+        # Cleanup
+        context.close()
+        browser.close()
+
+if __name__ == "__main__":
+    main()
