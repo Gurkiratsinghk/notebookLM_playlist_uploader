@@ -14,3 +14,6 @@ notebooklm/data/*.csv
 
 # Playwright
 playwright/.cache/
+
+# text
+update.txt

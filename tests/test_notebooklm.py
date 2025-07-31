@@ -1,20 +1,23 @@
 import unittest
-from notebooklm.scripts.notebook_2 import load_processed_links, process_csv_file
 import os
+import tempfile
+from notebooklm.scripts.notebook_2 import load_processed_links, process_csv_file
 
 class TestNotebookLM(unittest.TestCase):
-
     def setUp(self):
-        # Create a temporary log file for testing
-        self.log_file = "test_processed_links.log"
+        # Create temporary directory for test files
+        self.test_dir = tempfile.mkdtemp()
+        
+        # Set up log file path
+        self.log_file = os.path.join(self.test_dir, "processed_links.log")
         with open(self.log_file, "w", encoding="utf-8") as f:
-            f.write("INFO - https://www.youtube.com/watch?v=Nkg1uIXZwko\n")
+            f.write("2025-07-31 12:00:00,000 - INFO - https://www.youtube.com/watch?v=Nkg1uIXZwko\n")
 
-        # Create a temporary CSV file for testing
-        self.csv_file = "test_my_data.csv"
+        # Set up CSV file path
+        self.csv_file = os.path.join(self.test_dir, "test_my_data.csv")
         with open(self.csv_file, "w", encoding="utf-8") as f:
-            f.write("Title1;https://www.youtube.com/watch?v=Nkg1uIXZwko\n")
-            f.write("Title2;https://www.youtube.com/watch?v=Nkg1uIXZwko\n")
+            f.write("Test Video;https://www.youtube.com/watch?v=Nkg1uIXZwko\n")
+            f.write("Another Video;https://www.youtube.com/watch?v=different123\n")
 
     def tearDown(self):
         # Remove temporary files after tests
@@ -23,17 +26,28 @@ class TestNotebookLM(unittest.TestCase):
         if os.path.exists(self.csv_file):
             os.remove(self.csv_file)
 
-    # Test the function that loads processed links from the log file
     def test_load_processed_links(self):
-        processed_links = load_processed_links()
-        self.assertIn("https://www.youtube.com/watch?v=Nkg1uIXZwko", processed_links)
+        # Override LOG_FILE path for testing
+        import notebooklm.scripts.notebook_2 as notebook2
+        original_log_file = notebook2.LOG_FILE
+        notebook2.LOG_FILE = self.log_file
+        
+        try:
+            processed_links = load_processed_links()
+            self.assertIn("https://www.youtube.com/watch?v=Nkg1uIXZwko", processed_links)
+        finally:
+            # Restore original LOG_FILE path
+            notebook2.LOG_FILE = original_log_file
 
-    # Test the function that processes the CSV file and extracts new URLs
     def test_process_csv_file(self):
-        processed_links = {"https://www.youtube.com/watch?v=Nkg1uIXZwko"}
+        # Start with empty set of processed links
+        processed_links = set()
         new_urls = process_csv_file(self.csv_file, processed_links)
+        
+        # Both URLs should be in new_urls since none were in processed_links
         self.assertIn("https://www.youtube.com/watch?v=Nkg1uIXZwko", new_urls)
-        self.assertNotIn("https://www.youtube.com/watch?v=Nkg1uIXZwko", new_urls)
+        self.assertIn("https://www.youtube.com/watch?v=different123", new_urls)
+        self.assertEqual(len(new_urls), 2)
 
 if __name__ == "__main__":
     unittest.main()

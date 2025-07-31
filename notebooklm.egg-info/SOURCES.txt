@@ -1,0 +1,13 @@
+LICENSE
+README.md
+setup.py
+notebooklm/__init__.py
+notebooklm.egg-info/PKG-INFO
+notebooklm.egg-info/SOURCES.txt
+notebooklm.egg-info/dependency_links.txt
+notebooklm.egg-info/requires.txt
+notebooklm.egg-info/top_level.txt
+notebooklm/scripts/__init__.py
+notebooklm/scripts/notebook_2.py
+notebooklm/scripts/notebook_cv.py
+tests/test_notebooklm.py

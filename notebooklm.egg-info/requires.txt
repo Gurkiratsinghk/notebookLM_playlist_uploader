@@ -1,5 +1,4 @@
 playwright
 opencv-python
 numpy
-logging
-colorama>=0.4.6
+colorama

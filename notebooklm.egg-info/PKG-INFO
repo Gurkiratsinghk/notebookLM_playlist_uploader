@@ -1,0 +1,10 @@
+Metadata-Version: 2.4
+Name: notebooklm
+Version: 1.0.0
+License-File: LICENSE
+Requires-Dist: playwright
+Requires-Dist: opencv-python
+Requires-Dist: numpy
+Requires-Dist: colorama
+Dynamic: license-file
+Dynamic: requires-dist

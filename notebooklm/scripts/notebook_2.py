@@ -4,10 +4,18 @@ import logging
 import time
 from typing import Set, List
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
-from notebook_cv import notebook_cv
+from .notebook_cv import notebook_cv  # Local import
+import argparse
+from ..utils.console import (
+    print_error, print_info, print_progress,
+    print_warning, print_header
+)
+from ..utils.url import validate_url, clean_url
 
 # Configure logging with a more detailed format
-LOG_FILE = "processed_links.log"
+LOG_FILE = os.path.join(os.path.dirname(__file__), "..", "logs", "processed_links.log")
+os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
+
 logging.basicConfig(
     filename=LOG_FILE,
     level=logging.INFO,
@@ -100,57 +108,77 @@ def process_csv_file(csv_path: str, processed_links: Set[str]) -> List[str]:
     return youtube_urls
 
 def main() -> None:
+    print_header("NotebookLM Playlist Uploader")
+    
+    parser = argparse.ArgumentParser(description="Upload YouTube playlist videos to NotebookLM")
+    parser.add_argument("--url", type=str, help="YouTube Playlist URL (e.g., https://www.youtube.com/playlist?list=...)")
+    args = parser.parse_args()
+
+    # Get URL from argument or prompt
+    ytPlaylist = args.url
+    if not ytPlaylist:
+        ytPlaylist = input("Enter YouTube Playlist URL: ")
+
+    if not validate_url(ytPlaylist):
+        print_error("Invalid YouTube playlist URL. URL must contain 'youtube.com' and 'playlist'")
+        return
+
     processed_links = load_processed_links()
     youtube_urls = []
 
     try:
-        inp = input("Enter YT Playlist URL: ")
-        ytPlaylist = inp
+        print_progress("Initializing browser...")
+        print_info(f"Processing playlist: {ytPlaylist}")
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             context = browser.new_context(accept_downloads=True)
             page = context.new_page()
 
-            # ytPlaylist = "https://www.youtube.com/playlist?list=PL6EF60E1027E1A10B"
-
             # Navigate to YouTube playlist
             try:
+                print_progress("Loading playlist...")
                 page.goto(ytPlaylist, timeout=30000)
                 page.wait_for_load_state("networkidle", timeout=30000)
                 time.sleep(2)  # Allow dynamic content to load
+                print_info("Playlist loaded successfully")
             except PlaywrightTimeout:
-                logging.error("Timeout while loading YouTube playlist")
+                print_error("Timeout while loading YouTube playlist")
+                print_warning("Please check:")
+                print(" - Your internet connection")
+                print(" - The playlist URL is correct and accessible")
+                print(" - The playlist is not private")
+                return
+            except Exception as e:
+                print_error("Failed to load playlist")
+                print_warning(f"Error details: {str(e)}")
                 return
 
             # Extract video information
-            run_js_to_download_csv(page)
-
             try:
+                run_js_to_download_csv(page)
                 download = page.wait_for_event("download", timeout=30000)
                 csv_path = os.path.join(os.getcwd(), "my_data.csv")
                 download.save_as(csv_path)
-                logging.info(f"CSV downloaded successfully to: {csv_path}")
+                print_info(f"CSV downloaded successfully to: {csv_path}")
 
                 # Process CSV after ensuring it's fully written
                 time.sleep(2)
                 youtube_urls = process_csv_file(csv_path, processed_links)
-                
                 if youtube_urls:
-                    logging.info(f"Found {len(youtube_urls)} new videos to process")
+                    print_info(f"Found {len(youtube_urls)} new videos to process.")
                     notebook_cv(youtube_urls)
                 else:
-                    logging.info("No new videos to process")
-
+                    print_info("No new videos to process.")
             except PlaywrightTimeout:
-                logging.error("Timeout while waiting for CSV download")
+                print_error("Timeout while waiting for CSV download.")
             except Exception as e:
-                logging.error(f"Error during CSV processing: {e}")
+                print_error(f"Error during CSV processing: {e}")
             finally:
                 context.close()
                 browser.close()
 
     except Exception as e:
-        logging.error(f"Unexpected error: {e}")
+        print_error(f"Unexpected error: {e}")
 
 if __name__ == "__main__":
     main()

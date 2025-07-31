@@ -38,12 +38,12 @@ This project automates the process of extracting YouTube video URLs from a playl
    ```
 
 ## Usage
-1. Run the script:
+1. Run the script with the following command:
    ```bash
-   python notebooklm/notebook_2.py
+   python notebooklm/scripts/notebook_2.py --url "<YouTube Playlist URL>"
    ```
 
-2. Enter the YouTube playlist URL when prompted.
+2. The script will process the playlist and display progress in the terminal.
 
 ## Folder Structure
 ```
