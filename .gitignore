@@ -1,4 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual Environment
 noteLM/
 
-*.csv
-*.log
+# Logs
+notebooklm/logs/*.log
+
+# Data
+notebooklm/data/*.csv
+
+# Playwright
+playwright/.cache/

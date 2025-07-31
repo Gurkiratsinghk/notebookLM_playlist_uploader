@@ -6,11 +6,11 @@ import time
 from PIL import ImageGrab
 
 # File paths for your template images
-plus_template = "plus_add_source.png" 
-plus_template_2 = "plus_add_source_2.png"
-youtube_template = "youtube_button.png"
-text_field_template = "text_field.png"  # Use this if you have a distinct image for the text field
-insert_template = "insert_button.png"
+plus_template = "assets/add_source_button.png" 
+plus_template_2 = "assets/add_source_button_alt.png"
+youtube_template = "assets/youtube_button.png"
+text_field_template = "assets/text_field_button.png"  # Use this if you have a distinct image for the text field
+insert_template = "assets/insert_button.png"
 
 
 def find_image_on_screen(template_path, confidence=0.9, grayscale=True):
