@@ -107,7 +107,7 @@ def main() -> None:
         inp = input("Enter YT Playlist URL: ")
         ytPlaylist = inp
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=False)
+            browser = p.chromium.launch(headless=True)
             context = browser.new_context(accept_downloads=True)
             page = context.new_page()
 

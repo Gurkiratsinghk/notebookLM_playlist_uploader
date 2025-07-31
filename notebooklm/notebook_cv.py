@@ -27,7 +27,7 @@ def find_image_on_screen(template_path, confidence=0.9, grayscale=True):
     template_w, template_h = template.shape[::-1] if grayscale else (template.shape[1], template.shape[0])
     
     # Take a screenshot using pyautogui
-    screenshot = pyautogui.screenshot(allScreens=True)
+    screenshot = pyautogui.screenshot()
     screenshot = cv2.cvtColor(np.array(screenshot), cv2.COLOR_RGB2BGR)
     
     # Convert screenshot to grayscale if needed
