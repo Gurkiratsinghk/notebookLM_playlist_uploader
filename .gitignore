@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 *.pyo
+path.py
 
 # Virtual Environment
 noteLM/
