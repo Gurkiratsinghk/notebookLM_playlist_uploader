@@ -330,7 +330,14 @@ def load_processed_links() -> Set[str]:
     try:
         if os.path.exists(LOG_FILE):
             with open(LOG_FILE, "r", encoding="utf-8") as f:
-                processed = {line.split(' - ')[-1].strip() for line in f if ' - ' in line}
+                for line in f:
+                    # Log format is: "TIMESTAMP - LEVEL - New URL found: URL"
+                    # We only care about lines that contain processed URLs.
+                    if "New URL found: " in line:
+                        # Split by the specific phrase to get the URL part.
+                        url = line.split("New URL found: ")[-1].strip()
+                        if url:
+                            processed.add(url)
         return processed
     except Exception as e:
         logging.error(f"Error loading processed links: {e}")
@@ -451,6 +458,7 @@ def main() -> None:
             browser = p.chromium.launch(headless=False)
             page = browser.new_page()
             page.goto("https://notebooklm.google.com")
+            input("Press Enter after signing-up and NotebookLM is open...")
             with tqdm(total=100, desc="Loading NotebookLM", bar_format="{l_bar}{bar}| {elapsed}") as pbar:
                 page.wait_for_load_state("networkidle")
                 for _ in range(10):
@@ -524,12 +532,12 @@ def main() -> None:
                 run_js_to_download_csv(page)
                 with tqdm(total=100, desc="Downloading CSV", bar_format="{l_bar}{bar}| {elapsed}") as pbar:
                     download = page.wait_for_event("download", timeout=30000)
-                    csv_path = os.path.join(os.getcwd(), "my_data.csv")
+                    csv_path = os.path.join(os.getcwd(), "notebooklm\data\my_data.csv") # pyright: ignore[reportInvalidStringEscapeSequence]
                     download.save_as(csv_path)
                     pbar.update(100)
                 print_info(f"CSV downloaded successfully to: {csv_path}")
 
-                time.sleep(2)
+                time.sleep(1)
                 youtube_urls = process_csv_file(csv_path, processed_links)
                 if youtube_urls:
                     print_info(f"Found {len(youtube_urls)} new videos to process.")

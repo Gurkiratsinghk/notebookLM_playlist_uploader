@@ -349,11 +349,11 @@ def notebook_cv(youtube_urls: list[str]):
                 pyautogui.moveTo(coords[0], coords[1], duration=0.5)
                 pyautogui.click()
                 print_info("Clicked 'YouTube'")
-                time.sleep(2)
+                time.sleep(1)
                 break
             else:
                 print_warning(f"Attempt {attempt + 1}: Could not find 'YouTube' button")
-                time.sleep(1)
+                time.sleep(0.5)
         else:
             print_error("Failed to find 'YouTube' button after retries, skipping URL")
             continue
@@ -385,12 +385,19 @@ def notebook_cv(youtube_urls: list[str]):
 
         # Step 4: Click "Insert"
         for attempt in range(max_retries):
-            coords = find_image_on_screen([insert_path], confidence=0.9, roi=get_dynamic_roi("insert"))
+            text_variations = ["Insert"]
+            coords = None
+            for variation in text_variations:
+                coords = find_text_on_screen(variation, roi=get_dynamic_roi("insert"), confidence=0.9)
+                if coords:
+                    break
+            if not coords:
+                coords = find_image_on_screen([insert_path], confidence=0.9, roi=get_dynamic_roi("insert"))
             if coords:
                 pyautogui.moveTo(coords[0], coords[1], duration=0.5)
                 pyautogui.click()
                 print_info("Clicked 'Insert'")
-                time.sleep(5)
+                time.sleep(3)
                 break
             else:
                 print_warning(f"Attempt {attempt + 1}: Could not find 'Insert' button")
@@ -399,4 +406,4 @@ def notebook_cv(youtube_urls: list[str]):
             print_error("Failed to find 'Insert' button after retries, skipping URL")
             continue
         
-        time.sleep(5)
+        time.sleep(3)
