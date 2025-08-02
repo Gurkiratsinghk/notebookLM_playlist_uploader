@@ -146,33 +146,37 @@ text_field_path = os.path.join(assets_dir, "text_field_button.png")
 insert_path = os.path.join(assets_dir, "insert_button.png")
 
 
-def find_image_on_screen(template_paths, confidence=0.8, grayscale=True, roi=None):
+def find_image_on_screen(template_paths, confidence=0.6, grayscale=True, roi=None):
     """
     Searches for one of the given template images on the screen using template matching.
 
     Args:
         template_paths (list[str]): List of file paths to template images.
-        confidence (float): Minimum confidence threshold for a match (default 0.8).
-        grayscale (bool): Whether to convert images to grayscale before matching (default True).
+        confidence (float): Minimum confidence threshold for a match (default 0.9).
+        grayscale (bool): Whether to convert images to grayscale (default True).
         roi (tuple[int, int, int, int] or None): Optional region of interest as (x, y, width, height).
 
     Returns:
-        tuple[int, int] or None: Center coordinates (x, y) of the first matched template, or None if not found.
+        tuple[int, int] or None: Center coordinates (x, y) of the best match, or None if not found.
     """
     screenshot = pyautogui.screenshot()
     screenshot = np.array(screenshot)
-    roi_x, roi_y = 0, 0 # Initialize ROI offset
+    roi_x, roi_y = 0, 0
     if roi:
         roi_x, roi_y, roi_w, roi_h = roi
         screenshot = screenshot[roi_y:roi_y+roi_h, roi_x:roi_x+roi_w]
         if screenshot.size == 0:
             print_error("Invalid ROI dimensions")
-            return None  # Return None if ROI is empty
+            return None
 
     if grayscale:
         screenshot_gray = cv2.cvtColor(screenshot, cv2.COLOR_BGR2GRAY)
     else:
         screenshot_gray = screenshot
+
+    best_match = None
+    highest_conf = -1
+    best_template = None
 
     for template_path in template_paths:
         template = cv2.imread(template_path, 0 if grayscale else 1)
@@ -184,49 +188,67 @@ def find_image_on_screen(template_paths, confidence=0.8, grayscale=True, roi=Non
         res = cv2.matchTemplate(screenshot_gray, template, cv2.TM_CCOEFF_NORMED)
         min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
 
-        if max_val >= confidence:
-            center_x = max_loc[0] + template_w // 2 + (roi_x if roi else 0)
-            center_y = max_loc[1] + template_h // 2 + (roi_y if roi else 0)
-            print_info(f"Found template {template_path} at ({center_x}, {center_y})")
-            return center_x, center_y
-    return None
+        if max_val >= confidence and max_val > highest_conf:
+            highest_conf = max_val
+            center_x = max_loc[0] + template_w // 2 + roi_x
+            center_y = max_loc[1] + template_h // 2 + roi_y
+            best_match = (center_x, center_y)
+            best_template = template_path
+            print_info(f"Detected template {template_path} at ({center_x}, {center_y}) with confidence {max_val}")
+
+    if best_match:
+        print_info(f"Selected best match for {best_template} at {best_match} with confidence {highest_conf}")
+        return best_match
+    else:
+        print_warning(f"No match found for any template with confidence >= {confidence}")
+        return None
 
 
-def find_text_on_screen(text, roi=None, confidence=0.8):
+def find_text_on_screen(text, roi=None, confidence=0.6):
     """
     Searches for the specified text on the screen using OCR.
 
     Args:
         text (str): The text string to search for.
-        roi (tuple, optional): A region of interest as (x, y, width, height) to limit the search area.
-        confidence (float, optional): Minimum confidence threshold (0.0 to 1.0) for text detection.
+        roi (tuple, optional): A region of interest as (x, y, width, height).
+        confidence (float, optional): Minimum confidence threshold (0.0 to 1.0).
 
     Returns:
-        tuple or None: (center_x, center_y) coordinates of the detected text center, or None if not found.
+        tuple or None: (center_x, center_y) coordinates of the best match, or None if not found.
     """
     screenshot = pyautogui.screenshot()
     screenshot = cv2.cvtColor(np.array(screenshot), cv2.COLOR_RGB2BGR)
     
-    x_offset, y_offset = 0, 0 # Initialize x_offset, y_offset for ROI offset
-
+    x_offset, y_offset = 0, 0
     if roi:
         x, y, w, h = roi
         screenshot = screenshot[y:y+h, x:x+w]
+        x_offset, y_offset = x, y
     
     pil_image = Image.fromarray(screenshot)
     ocr_data = pytesseract.image_to_data(pil_image, output_type=pytesseract.Output.DICT)
     
+    best_match = None
+    highest_conf = -1
     for i, detected_text in enumerate(ocr_data["text"]):
         try:
             conf_val = float(ocr_data["conf"][i])
         except (ValueError, TypeError):
-            conf_val = -1  # Treat as low confidence if parsing fails
+            conf_val = -1
         if detected_text.lower() == text.lower() and conf_val >= confidence * 100:
-            center_x = ocr_data["left"][i] + ocr_data["width"][i] // 2 + (roi[0] if roi else 0)
-            center_y = ocr_data["top"][i] + ocr_data["height"][i] // 2 + (roi[1] if roi else 0)
-            print_info(f"Found text '{detected_text}' at ({center_x}, {center_y})")
-            return center_x, center_y
-    return None
+            center_x = ocr_data["left"][i] + ocr_data["width"][i] // 2 + x_offset
+            center_y = ocr_data["top"][i] + ocr_data["height"][i] // 2 + y_offset
+            if conf_val > highest_conf:
+                highest_conf = conf_val
+                best_match = (center_x, center_y)
+            print_info(f"Detected '{detected_text}' at ({center_x}, {center_y}) with confidence {conf_val}")
+    
+    if best_match:
+        print_info(f"Selected best match for '{text}' at {best_match} with confidence {highest_conf}")
+        return best_match
+    else:
+        print_warning(f"No match found for '{text}' with confidence >= {confidence}")
+        return None
 
 
 def youtube_button_click(): 
@@ -270,98 +292,118 @@ def add_source_button_click():
     return None
 
 
-
-def get_dynamic_roi(width_ratio=0.5, height_ratio=0.15, x_offset_ratio=0.0, y_offset_ratio=0.0):
+def get_dynamic_roi(element_type="default", width_ratio=0.5, height_ratio=0.35):
     """
-    Calculates a dynamic ROI based on the current screen size and provided ratios.
-    Returns a tuple (x, y, w, h).
+    Calculates a dynamic ROI based on the current screen size and element type.
     """
     screen_width, screen_height = pyautogui.size()
-    x = int(screen_width * x_offset_ratio)
-    y = int(screen_height * y_offset_ratio)
-    w = int(screen_width * width_ratio)
-    h = int(screen_height * height_ratio)
-    coords = find_image_on_screen([create_new_notebook_path], confidence=0.6, roi=(0, 0, 800, 200))
+    
+    roi_configs = {
+            "add_source": (0.0, 0.15, 0.25, 0.25),    # Left panel for "+ Add" button
+            "create_notebook": (0.06, 0.66, 0.3, 0.25), # Bottom-center for "Create new notebook"
+            "youtube": (0.25, 0.45, 0.5, 0.35),       # Center of Add Sources popup for "YouTube"
+            "text_field": (0.05, 0.31, 0.75, 0.25),   # Center of YouTube popup for text field
+            "insert": (0.55, 0.65, 0.35, 0.25)        # Bottom-right of YouTube popup for "Insert"
+        }
+    
+    x_ratio, y_ratio, w_ratio, h_ratio = roi_configs.get(element_type, (0.0, 0.0, width_ratio, height_ratio))
+    x = int(screen_width * x_ratio)
+    y = int(screen_height * y_ratio)
+    w = int(screen_width * w_ratio)
+    h = int(screen_height * h_ratio)
+    return (x, y, w, h)
+
+
 def notebook_cv(youtube_urls: list[str]):
     """
-    Automates the process of adding YouTube URLs as sources to a notebook by interacting with the UI using image recognition and OCR.
-
-    Args:
-        youtube_urls (list[str]): A list of YouTube video URLs to be added as sources.
+    Automates the process of adding YouTube URLs as sources to a notebook by interacting with the UI.
     """
-    roi = get_dynamic_roi()  # Calculate ROI dynamically based on screen size
     for url in youtube_urls:
-        # Try OCR first for "Create New Notebook"
-        coords = find_text_on_screen("Create New Notebook", roi=roi, confidence=0.8)
-        if not coords:
-            # Fallback to template matching
-            coords = find_image_on_screen([create_new_notebook_path], confidence=0.6, roi=roi)
-        if coords:
-            pyautogui.moveTo(coords[0], coords[1], duration=0.5)
-            pyautogui.click()
-            print_info("Clicked 'Create New Notebook'")
-            coords = find_image_on_screen([text_field_path], confidence=0.6, roi=(0, 0, 800, 200))
-            continue
+        print_progress(f"Processing URL: {url}")
         
-        # First, try clicking the "YouTube" button in case the "Add Source" window is already open.
-        time.sleep(2)
-        youtube_button_click()
-        
-        # Always attempt to click the "+ Add" button, regardless of previous result
-        add_source_button_click()
-        
-        # Wait for the "Add Source" window to appear, then click the "YouTube" button again.
-        time.sleep(2)
-        youtube_button_click()
-        
-        # Text field
-        coords = find_image_on_screen(
-                [insert_path],
-                confidence=0.6,
-                roi=(0, 0, 800, 200)
-            )
-        if coords:
-            pyautogui.moveTo(coords[0], coords[1], duration=0.5)
-            pyautogui.click()
-            print_info("Clicked text field")
-            keyboard.write(url, delay=0.05)
-        if coords:
-            pyautogui.moveTo(coords[0], coords[1], duration=0.5)
-            pyautogui.click()
-            print_info("Clicked text field")
-            # Verify focus by checking if the text field is still present after click, retry if not
-            max_retries = 3
-            for attempt in range(max_retries):
-                time.sleep(0.5)
-                # Optionally, check if the text field is still present (OCR or template)
-                verify_coords = find_text_on_screen("Paste YouTube URL*", roi=roi, confidence=0.6)
-                if not verify_coords:
-                    verify_coords = find_image_on_screen([text_field_path], confidence=0.6, roi=roi)
-                if verify_coords:
-                    keyboard.write(url, delay=0.05)
-                    print_progress(f"Typed URL: {url}")
-                    break
-                else:
-                    pyautogui.click()  # Try clicking again
-                    print_warning("Retrying click on text field")
+        # Step 1: Click "+ Add" to open the Add Sources popup
+        max_retries = 3
+        for attempt in range(max_retries):
+            coords = find_text_on_screen("+ Add", roi=get_dynamic_roi("add_source"), confidence=0.9)
+            if not coords:
+                coords = find_image_on_screen([add_source_path, add_source_alt_path], confidence=0.9, roi=get_dynamic_roi("add_source"))
+            if coords:
+                pyautogui.moveTo(coords[0], coords[1], duration=0.5)
+                pyautogui.click()
+                print_info("Clicked '+ Add'")
+                time.sleep(2)
+                break
             else:
-                print_error("Failed to focus text field after retries, skipping URL")
-                continue
+                print_warning(f"Attempt {attempt + 1}: Could not find '+ Add' button")
+                time.sleep(1)
         else:
-            print_warning("Could not find text field")
+            print_error("Failed to find '+ Add' button after retries, skipping URL")
             continue
-            # Fallback to template matching
-            coords = find_image_on_screen(
-                [insert_path],
-                confidence=0.6,
-                roi=roi
-            )
-        if coords:
-            pyautogui.moveTo(coords[0], coords[1], duration=0.5)
-            pyautogui.click()
-            print_info("Clicked 'Insert'")
+
+        # Step 2: Click "YouTube" in the Add Sources popup
+        for attempt in range(max_retries):
+            coords = find_text_on_screen("YouTube", roi=get_dynamic_roi("youtube"), confidence=0.9)
+            if not coords:
+                coords = find_image_on_screen([youtube_path], confidence=0.7, roi=get_dynamic_roi("youtube"))
+            if coords:
+                pyautogui.moveTo(coords[0], coords[1], duration=0.5)
+                pyautogui.click()
+                print_info("Clicked 'YouTube'")
+                time.sleep(1)
+                break
+            else:
+                print_warning(f"Attempt {attempt + 1}: Could not find 'YouTube' button")
+                time.sleep(0.5)
         else:
-            print_warning("Could not find 'Insert' button")
+            print_error("Failed to find 'YouTube' button after retries, skipping URL")
+            continue
+
+        # Step 3: Click text field and type URL
+        for attempt in range(max_retries):
+            text_variations = ["Paste YouTube URL", "YouTube URL", "Paste YouTube", "URL"]
+            coords = None
+            for variation in text_variations:
+                coords = find_text_on_screen(variation, roi=get_dynamic_roi("text_field"), confidence=0.7)
+                if coords:
+                    break
+            if not coords:
+                coords = find_image_on_screen([text_field_path], confidence=0.7, roi=get_dynamic_roi("text_field"))
+            if coords:
+                pyautogui.moveTo(coords[0], coords[1], duration=0.5)
+                pyautogui.click()
+                print_info("Clicked text field")
+                time.sleep(0.5)
+                keyboard.write(url, delay=0.05)
+                print_progress(f"Typed URL: {url}")
+                break
+            else:
+                print_warning(f"Attempt {attempt + 1}: Could not find 'Paste YouTube URL*'")
+                time.sleep(1)
+        else:
+            print_error("Failed to find 'Paste YouTube URL*' after retries, skipping URL")
+            continue
+
+        # Step 4: Click "Insert"
+        for attempt in range(max_retries):
+            text_variations = ["Insert"]
+            coords = None
+            for variation in text_variations:
+                coords = find_text_on_screen(variation, roi=get_dynamic_roi("insert"), confidence=0.9)
+                if coords:
+                    break
+            if not coords:
+                coords = find_image_on_screen([insert_path], confidence=0.9, roi=get_dynamic_roi("insert"))
+            if coords:
+                pyautogui.moveTo(coords[0], coords[1], duration=0.5)
+                pyautogui.click()
+                print_info("Clicked 'Insert'")
+                time.sleep(3)
+                break
+            else:
+                print_warning(f"Attempt {attempt + 1}: Could not find 'Insert' button")
+                time.sleep(1)
+        else:
+            print_error("Failed to find 'Insert' button after retries, skipping URL")
             continue
         
-        time.sleep(5)
+        time.sleep(3)

@@ -294,7 +294,7 @@ import time
 from typing import Set, List
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
 import pyautogui
-from .notebook_cv import notebook_cv, find_image_on_screen, find_text_on_screen  # Local import
+from .notebook_cv import notebook_cv, find_image_on_screen, find_text_on_screen, get_dynamic_roi  # Local import
 import argparse
 from ..utils.console import (
     print_error, print_info, print_progress,
@@ -302,6 +302,18 @@ from ..utils.console import (
 )
 from ..utils.url import validate_url, clean_url
 from tqdm import tqdm
+
+script_dir = os.path.dirname(__file__)
+assets_dir = os.path.normpath(os.path.join(script_dir, "..", "assets"))
+# set_create_new_notebook_button = False
+# set_add_source_button = False
+# set_youtube_button = False
+
+# Define template paths
+create_new_notebook_path = os.path.join(assets_dir, "create_new_notebook.png")
+add_source_path = os.path.join(assets_dir, "add_source_button.png")
+add_source_alt_path = os.path.join(assets_dir, "add_source_button_alt.png")
+youtube_path = os.path.join(assets_dir, "youtube_button.png")
 
 # Configure logging
 LOG_FILE = os.path.join(os.path.dirname(__file__), "..", "logs", "processed_links.log")
@@ -318,7 +330,14 @@ def load_processed_links() -> Set[str]:
     try:
         if os.path.exists(LOG_FILE):
             with open(LOG_FILE, "r", encoding="utf-8") as f:
-                processed = {line.split(' - ')[-1].strip() for line in f if ' - ' in line}
+                for line in f:
+                    # Log format is: "TIMESTAMP - LEVEL - New URL found: URL"
+                    # We only care about lines that contain processed URLs.
+                    if "New URL found: " in line:
+                        # Split by the specific phrase to get the URL part.
+                        url = line.split("New URL found: ")[-1].strip()
+                        if url:
+                            processed.add(url)
         return processed
     except Exception as e:
         logging.error(f"Error loading processed links: {e}")
@@ -367,64 +386,39 @@ def process_csv_file(csv_path: str, processed_links: Set[str]) -> List[str]:
 
 def check_notebooklm_homepage() -> bool:
     print_progress("Checking NotebookLM homepage consistency...")
-    script_dir = os.path.dirname(__file__)
-    assets_dir = os.path.normpath(os.path.join(script_dir, "..", "assets"))
-    set_create_new_notebook_button = False
-    set_add_source_button = False
-    set_youtube_button = False
     
-    # Define template paths
-    create_new_notebook_path = os.path.join(assets_dir, "create_new_notebook.png")
-    add_source_path = os.path.join(assets_dir, "add_source_button.png")
-    add_source_alt_path = os.path.join(assets_dir, "add_source_button_alt.png")
-    youtube_path = os.path.join(assets_dir, "youtube_button.png")
-    
-    # Check if files exist
-    for path in [create_new_notebook_path, add_source_path, add_source_alt_path, youtube_path]:
-        if not os.path.exists(path):
-            print_error(f"Template file missing: {path}")
-            return False
-    
-    # Check for "Create New Notebook" (try OCR first, then template)
-    coords = find_text_on_screen("Create New Notebook", roi=(0, 0, 800, 200), confidence=0.8)
+    # Check for "+ Add" in notebook view first
+    coords = find_text_on_screen("+ Add", roi=get_dynamic_roi("add_source"), confidence=0.6)
     if not coords:
-        coords = find_image_on_screen([create_new_notebook_path], confidence=0.8, roi=(0, 0, 800, 200))
-    if not coords:
-        print_warning("Could not find 'Create New Notebook' button or text")
-        set_create_new_notebook_button = False
+        coords = find_image_on_screen([add_source_path, add_source_alt_path], confidence=0.6, roi=get_dynamic_roi("add_source"))
+    if coords:
+        print_info("Found '+ Add'")
     else:
-        set_create_new_notebook_button = True
-        print_info("Found 'Create New Notebook'")
+        print_warning("Could not find '+ Add' button, checking for 'Create new notebook'")
+        # Fallback to homepage check
+        coords = find_text_on_screen("Create new notebook", roi=get_dynamic_roi("create_notebook"), confidence=0.6)
+        if not coords:
+            coords = find_image_on_screen([create_new_notebook_path], confidence=0.6, roi=get_dynamic_roi("create_notebook"))
+        if not coords:
+            print_error("Could not find 'Create new notebook' or '+ Add', capturing debug screenshot")
+            screenshot = pyautogui.screenshot()
+            screenshot.save("debug_screenshot.png")
+            return False
+        print_info("Found 'Create new notebook'")
         pyautogui.moveTo(coords[0], coords[1], duration=0.5)
         pyautogui.click()
         time.sleep(2)
-    
-    # Check for "+ Add" (either variant)
-    coords = find_text_on_screen("Add", confidence=0.6)
+
+    # Verify "+ Add" after potential homepage navigation
+    coords = find_text_on_screen("+ Add", roi=get_dynamic_roi("add_source"), confidence=0.6)
     if not coords:
-        coords = find_image_on_screen([add_source_path, add_source_alt_path], confidence=0.8, roi=(0, 0, 800, 400))
+        coords = find_image_on_screen([add_source_path, add_source_alt_path], confidence=0.6, roi=get_dynamic_roi("add_source"))
     if not coords:
-        print_warning("Could not find '+ Add' button")
-        set_add_source_button = False
-    else:
-        set_add_source_button = True
-        print_info("Found '+ Add'")
-    
-    # Check for "YouTube" button
-    coords = find_text_on_screen("YouTube", confidence=0.6)
-    if not coords:
-        coords = find_image_on_screen([youtube_path], confidence=0.8, roi=(0, 0, 800, 600))
-    if not coords:
-        print_warning("Could not find 'YouTube' button")
-        set_youtube_button = False
-    else:        
-        set_youtube_button = True
-        print_info("Found 'YouTube' button")
-    
-    if set_create_new_notebook_button or set_add_source_button or set_youtube_button:
-        return True
-    else:
+        print_warning("Could not find '+ Add' button after navigation")
         return False
+    print_info("Found '+ Add' after verification")
+    
+    return True
     
 
 def main() -> None:
@@ -464,6 +458,7 @@ def main() -> None:
             browser = p.chromium.launch(headless=False)
             page = browser.new_page()
             page.goto("https://notebooklm.google.com")
+            input("Press Enter after signing-up and NotebookLM is open...")
             with tqdm(total=100, desc="Loading NotebookLM", bar_format="{l_bar}{bar}| {elapsed}") as pbar:
                 page.wait_for_load_state("networkidle")
                 for _ in range(10):
@@ -537,12 +532,12 @@ def main() -> None:
                 run_js_to_download_csv(page)
                 with tqdm(total=100, desc="Downloading CSV", bar_format="{l_bar}{bar}| {elapsed}") as pbar:
                     download = page.wait_for_event("download", timeout=30000)
-                    csv_path = os.path.join(os.getcwd(), "my_data.csv")
+                    csv_path = os.path.join(os.getcwd(), "notebooklm\data\my_data.csv") # pyright: ignore[reportInvalidStringEscapeSequence]
                     download.save_as(csv_path)
                     pbar.update(100)
                 print_info(f"CSV downloaded successfully to: {csv_path}")
 
-                time.sleep(2)
+                time.sleep(1)
                 youtube_urls = process_csv_file(csv_path, processed_links)
                 if youtube_urls:
                     print_info(f"Found {len(youtube_urls)} new videos to process.")

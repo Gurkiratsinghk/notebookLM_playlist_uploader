@@ -11,7 +11,7 @@ class TestNotebookLM(unittest.TestCase):
         # Set up log file path
         self.log_file = os.path.join(self.test_dir, "processed_links.log")
         with open(self.log_file, "w", encoding="utf-8") as f:
-            f.write("2025-07-31 12:00:00,000 - INFO - https://www.youtube.com/watch?v=Nkg1uIXZwko\n")
+            f.write("2025-07-31 12:00:00,000 - INFO - New URL found: https://www.youtube.com/watch?v=Nkg1uIXZwko\n")
 
         # Set up CSV file path
         self.csv_file = os.path.join(self.test_dir, "test_my_data.csv")
