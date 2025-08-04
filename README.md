@@ -11,7 +11,7 @@ This project automates the process of extracting YouTube video URLs from a playl
 
 ## Things under work
 - Launch NotebookLM automatically option does not work becasue google does not allow sign-in on chromium. (and I do not have a solution for this)
-- Text based detection of 'Text field' does not work. Instead image detection is being used.
+- Text based detection of 'Text field' does not work (sometimes). Instead image detection is being used.
 
 
 ## Prerequisites
@@ -83,6 +83,7 @@ On macOS/Linux: Install via package manager (e.g., `brew install tesseract` or `
 3. For specific test files:
    ```bash
    python -m pytest tests/test_notebooklm.py
+   # Open NotebookLM
    python -m pytest tests/test_roi_button_click.py
    ```
 
